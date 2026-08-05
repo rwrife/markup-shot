@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MarkupShot", "src\MarkupShot\MarkupShot.csproj", "{A3D68E6A-851F-4A7F-89A3-12D6DDF6D2A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MarkupShot.Core", "src\MarkupShot.Core\MarkupShot.Core.csproj", "{B68B56E3-A2E2-4AF7-A6E2-9A9E2C6CEFD5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MarkupShot.Core.Tests", "tests\MarkupShot.Core.Tests\MarkupShot.Core.Tests.csproj", "{C9F9E0EE-2A9C-4E93-9C2C-C2CDE89A8D7E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A3D68E6A-851F-4A7F-89A3-12D6DDF6D2A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3D68E6A-851F-4A7F-89A3-12D6DDF6D2A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3D68E6A-851F-4A7F-89A3-12D6DDF6D2A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3D68E6A-851F-4A7F-89A3-12D6DDF6D2A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B68B56E3-A2E2-4AF7-A6E2-9A9E2C6CEFD5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B68B56E3-A2E2-4AF7-A6E2-9A9E2C6CEFD5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B68B56E3-A2E2-4AF7-A6E2-9A9E2C6CEFD5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B68B56E3-A2E2-4AF7-A6E2-9A9E2C6CEFD5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C9F9E0EE-2A9C-4E93-9C2C-C2CDE89A8D7E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C9F9E0EE-2A9C-4E93-9C2C-C2CDE89A8D7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C9F9E0EE-2A9C-4E93-9C2C-C2CDE89A8D7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C9F9E0EE-2A9C-4E93-9C2C-C2CDE89A8D7E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
