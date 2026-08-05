@@ -29,6 +29,16 @@
             </MenuItem>
         </Menu>
 
+        <ToolBarTray DockPanel.Dock="Top" IsLocked="True">
+            <ToolBar>
+                <Button Content="Add Rectangle" Click="AddRectangleButton_Click" />
+                <Button Content="Add Ellipse" Click="AddEllipseButton_Click" />
+                <Button Content="Add Line" Click="AddLineButton_Click" />
+                <Separator />
+                <Button Content="Delete Selected" Click="DeleteSelectedButton_Click" />
+            </ToolBar>
+        </ToolBarTray>
+
         <StatusBar DockPanel.Dock="Bottom">
             <TextBlock x:Name="StatusTextBlock" Text="Open or drop a PNG/JPEG image to begin." />
         </StatusBar>
@@ -39,7 +49,10 @@
                     <Canvas x:Name="EditorCanvas"
                             Width="960"
                             Height="540"
-                            Background="#FF1F1F1F">
+                            Background="#FF1F1F1F"
+                            MouseLeftButtonDown="EditorCanvas_MouseLeftButtonDown"
+                            MouseMove="EditorCanvas_MouseMove"
+                            MouseLeftButtonUp="EditorCanvas_MouseLeftButtonUp">
                         <Image x:Name="BaseImageElement"
                                Canvas.Left="0"
                                Canvas.Top="0" />
