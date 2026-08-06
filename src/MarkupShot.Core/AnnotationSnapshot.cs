@@ -21,4 +21,12 @@ public sealed record AnnotationSnapshot
     public string StrokeHex { get; init; } = "#FFFF4F4F";
 
     public double StrokeThickness { get; init; } = 2d;
+
+    public string? Text { get; init; }
+
+    public double FontSize { get; init; } = 18d;
+
+    public double FillOpacity { get; init; } = 0.35d;
+
+    public List<AnnotationPoint>? Points { get; init; }
 }

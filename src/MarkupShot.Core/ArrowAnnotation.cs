@@ -1,13 +1,13 @@
 namespace MarkupShot.Core;
 
-public sealed class LineAnnotation : IAnnotation
+public sealed class ArrowAnnotation : IAnnotation
 {
-    public LineAnnotation(AnnotationPoint start, AnnotationPoint end, string strokeHex = "#FFFF4F4F", double strokeThickness = 2d)
+    public ArrowAnnotation(AnnotationPoint start, AnnotationPoint end, string strokeHex = "#FFFF4F4F", double strokeThickness = 2d)
         : this(Guid.NewGuid(), start, end, strokeHex, strokeThickness)
     {
     }
 
-    public LineAnnotation(Guid id, AnnotationPoint start, AnnotationPoint end, string strokeHex = "#FFFF4F4F", double strokeThickness = 2d)
+    public ArrowAnnotation(Guid id, AnnotationPoint start, AnnotationPoint end, string strokeHex = "#FFFF4F4F", double strokeThickness = 2d)
     {
         Id = id == Guid.Empty ? Guid.NewGuid() : id;
         Start = start;
@@ -18,7 +18,7 @@ public sealed class LineAnnotation : IAnnotation
 
     public Guid Id { get; }
 
-    public AnnotationKind Kind => AnnotationKind.Line;
+    public AnnotationKind Kind => AnnotationKind.Arrow;
 
     public AnnotationPoint Start { get; private set; }
 
