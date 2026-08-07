@@ -13,6 +13,9 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
+                <MenuItem Header="_Capture Region"
+                          Click="CaptureMenuItem_Click"
+                          InputGestureText="Ctrl+Shift+M" />
                 <MenuItem Header="_Open..."
                           Click="OpenMenuItem_Click"
                           InputGestureText="Ctrl+O" />
