@@ -16,5 +16,7 @@ public interface IAnnotation
 
     void Resize(AnnotationHandle handle, double dx, double dy, double minimumSize = 4d);
 
+    void SetStroke(string strokeHex, double strokeThickness);
+
     AnnotationSnapshot ToSnapshot();
 }

@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -13,6 +16,8 @@ public partial class MainWindow : Window
 {
     private const string DefaultStrokeHex = "#FFFF4F4F";
     private const double DefaultStrokeThickness = 2d;
+    private const double DefaultTextFontSize = 18d;
+    private const string DefaultTextCallout = "Add note here";
 
     private readonly MarkupDocument _document = new();
     private BitmapSource? _currentBitmap;
@@ -21,9 +26,13 @@ public partial class MainWindow : Window
     private AnnotationHandle _activeHandle = AnnotationHandle.None;
     private Point _lastPointer;
 
+    private bool _suppressStyleEvents;
+    private bool _suppressTextEvents;
+
     public MainWindow()
     {
         InitializeComponent();
+        TextContentTextBox.Text = DefaultTextCallout;
     }
 
     private void OpenMenuItem_Click(object sender, RoutedEventArgs e) => OpenWithDialog();
@@ -34,7 +43,7 @@ public partial class MainWindow : Window
 
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => Close();
 
-    private void AddRectangleButton_Click(object sender, RoutedEventArgs e)
+    private void AddArrowButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureImageLoaded())
         {
@@ -42,26 +51,13 @@ public partial class MainWindow : Window
         }
 
         var bounds = BuildSeedBounds();
-        var annotation = new RectangleAnnotation(bounds, DefaultStrokeHex, DefaultStrokeThickness);
-        _document.AddAnnotation(annotation);
-        _document.SelectAnnotation(annotation.Id);
-        RenderDocument();
-        StatusTextBlock.Text = "Added rectangle annotation.";
-    }
+        var annotation = new ArrowAnnotation(
+            new AnnotationPoint(bounds.Left, bounds.Center.Y),
+            new AnnotationPoint(bounds.Right, bounds.Center.Y),
+            GetSelectedStrokeHex(),
+            GetSelectedStrokeThickness());
 
-    private void AddEllipseButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!EnsureImageLoaded())
-        {
-            return;
-        }
-
-        var bounds = BuildSeedBounds();
-        var annotation = new EllipseAnnotation(bounds, DefaultStrokeHex, DefaultStrokeThickness);
-        _document.AddAnnotation(annotation);
-        _document.SelectAnnotation(annotation.Id);
-        RenderDocument();
-        StatusTextBlock.Text = "Added ellipse annotation.";
+        AddAndSelectAnnotation(annotation, "Added arrow annotation.");
     }
 
     private void AddLineButton_Click(object sender, RoutedEventArgs e)
@@ -75,16 +71,148 @@ public partial class MainWindow : Window
         var annotation = new LineAnnotation(
             new AnnotationPoint(bounds.Left, bounds.Top),
             new AnnotationPoint(bounds.Right, bounds.Bottom),
-            DefaultStrokeHex,
-            DefaultStrokeThickness);
+            GetSelectedStrokeHex(),
+            GetSelectedStrokeThickness());
 
-        _document.AddAnnotation(annotation);
-        _document.SelectAnnotation(annotation.Id);
-        RenderDocument();
-        StatusTextBlock.Text = "Added line annotation.";
+        AddAndSelectAnnotation(annotation, "Added line annotation.");
+    }
+
+    private void AddRectangleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var annotation = new RectangleAnnotation(
+            BuildSeedBounds(),
+            GetSelectedStrokeHex(),
+            GetSelectedStrokeThickness());
+
+        AddAndSelectAnnotation(annotation, "Added rectangle annotation.");
+    }
+
+    private void AddEllipseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var annotation = new EllipseAnnotation(
+            BuildSeedBounds(),
+            GetSelectedStrokeHex(),
+            GetSelectedStrokeThickness());
+
+        AddAndSelectAnnotation(annotation, "Added ellipse annotation.");
+    }
+
+    private void AddInkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var annotation = new InkAnnotation(
+            BuildSeedInkPoints(),
+            GetSelectedStrokeHex(),
+            GetSelectedStrokeThickness());
+
+        AddAndSelectAnnotation(annotation, "Added freehand ink annotation.");
+    }
+
+    private void AddTextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var text = string.IsNullOrWhiteSpace(TextContentTextBox.Text)
+            ? DefaultTextCallout
+            : TextContentTextBox.Text;
+
+        var annotation = new TextAnnotation(
+            BuildSeedBounds(),
+            text,
+            GetSelectedFontSize(),
+            GetSelectedStrokeHex(),
+            Math.Max(1d, GetSelectedStrokeThickness() / 2d));
+
+        AddAndSelectAnnotation(annotation, "Added text callout annotation.");
+    }
+
+    private void AddHighlighterButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var annotation = new HighlighterAnnotation(
+            BuildSeedBounds(),
+            GetSelectedStrokeHex(),
+            Math.Max(1d, GetSelectedStrokeThickness() / 2d),
+            fillOpacity: 0.35d);
+
+        AddAndSelectAnnotation(annotation, "Added highlighter annotation.");
     }
 
     private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e) => DeleteSelectedAnnotation();
+
+    private void StyleControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressStyleEvents || !IsLoaded)
+        {
+            return;
+        }
+
+        if (_document.SelectedAnnotationId is not Guid selectedId
+            || !_document.TryGetAnnotation(selectedId, out var selectedAnnotation))
+        {
+            return;
+        }
+
+        selectedAnnotation.SetStroke(GetSelectedStrokeHex(), GetSelectedStrokeThickness());
+        RenderDocument();
+    }
+
+    private void FontSizeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressTextEvents || !IsLoaded)
+        {
+            return;
+        }
+
+        if (_document.SelectedAnnotationId is not Guid selectedId
+            || !_document.TryGetAnnotation(selectedId, out var selectedAnnotation)
+            || selectedAnnotation is not TextAnnotation textAnnotation)
+        {
+            return;
+        }
+
+        textAnnotation.SetFontSize(GetSelectedFontSize());
+        RenderDocument();
+    }
+
+    private void TextContentTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressTextEvents || !IsLoaded)
+        {
+            return;
+        }
+
+        if (_document.SelectedAnnotationId is not Guid selectedId
+            || !_document.TryGetAnnotation(selectedId, out var selectedAnnotation)
+            || selectedAnnotation is not TextAnnotation textAnnotation)
+        {
+            return;
+        }
+
+        textAnnotation.SetText(TextContentTextBox.Text);
+        RenderDocument();
+    }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
@@ -177,6 +305,7 @@ public partial class MainWindow : Window
             _activeHandle = AnnotationHandle.None;
         }
 
+        SyncControlsFromSelection();
         RenderDocument();
         e.Handled = true;
     }
@@ -323,12 +452,22 @@ public partial class MainWindow : Window
 
             Title = $"markup-shot — {Path.GetFileName(path)}";
             StatusTextBlock.Text = $"Loaded {Path.GetFileName(path)} ({image.Width}x{image.Height})";
+            SyncControlsFromSelection();
             RenderDocument();
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "Could not open image", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void AddAndSelectAnnotation(IAnnotation annotation, string statusMessage)
+    {
+        _document.AddAnnotation(annotation);
+        _document.SelectAnnotation(annotation.Id);
+        SyncControlsFromSelection();
+        RenderDocument();
+        StatusTextBlock.Text = statusMessage;
     }
 
     private void DeleteSelectedAnnotation()
@@ -340,6 +479,7 @@ public partial class MainWindow : Window
 
         if (_document.RemoveAnnotation(selectedId))
         {
+            SyncControlsFromSelection();
             RenderDocument();
             StatusTextBlock.Text = "Deleted selected annotation.";
         }
@@ -381,24 +521,24 @@ public partial class MainWindow : Window
 
     private UIElement BuildAnnotationVisual(IAnnotation annotation, bool isSelected)
     {
-        var stroke = BuildBrushForAnnotation(annotation);
-        var thickness = annotation switch
-        {
-            RectangularAnnotationBase rectangular => rectangular.StrokeThickness,
-            LineAnnotation line => line.StrokeThickness,
-            _ => DefaultStrokeThickness
-        };
+        var color = ParseColor(GetStrokeHex(annotation), Colors.OrangeRed);
+        var strokeBrush = new SolidColorBrush(color);
+        var thickness = Math.Max(1d, GetStrokeThickness(annotation));
 
         if (isSelected)
         {
-            thickness += 1;
+            thickness += 1d;
         }
 
         return annotation switch
         {
-            RectangleAnnotation rectangle => BuildRectangleVisual(rectangle, stroke, thickness),
-            EllipseAnnotation ellipse => BuildEllipseVisual(ellipse, stroke, thickness),
-            LineAnnotation line => BuildLineVisual(line, stroke, thickness),
+            RectangleAnnotation rectangle => BuildRectangleVisual(rectangle, strokeBrush, thickness),
+            EllipseAnnotation ellipse => BuildEllipseVisual(ellipse, strokeBrush, thickness),
+            LineAnnotation line => BuildLineVisual(line, strokeBrush, thickness),
+            ArrowAnnotation arrow => BuildArrowVisual(arrow, strokeBrush, thickness),
+            InkAnnotation ink => BuildInkVisual(ink, strokeBrush, thickness),
+            TextAnnotation text => BuildTextVisual(text, color, thickness, isSelected),
+            HighlighterAnnotation highlighter => BuildHighlighterVisual(highlighter, color, thickness, isSelected),
             _ => throw new InvalidOperationException($"Unknown annotation type: {annotation.GetType().Name}")
         };
     }
@@ -448,25 +588,148 @@ public partial class MainWindow : Window
             StrokeEndLineCap = PenLineCap.Round
         };
 
-    private static Brush BuildBrushForAnnotation(IAnnotation annotation)
+    private static UIElement BuildArrowVisual(ArrowAnnotation arrow, Brush stroke, double thickness)
     {
-        var fallback = Brushes.OrangeRed;
+        var container = new Canvas { IsHitTestVisible = false };
 
-        var hex = annotation switch
+        var line = new Line
         {
-            RectangularAnnotationBase rectangular => rectangular.StrokeHex,
-            LineAnnotation line => line.StrokeHex,
-            _ => string.Empty
+            X1 = arrow.Start.X,
+            Y1 = arrow.Start.Y,
+            X2 = arrow.End.X,
+            Y2 = arrow.End.Y,
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
         };
 
-        if (string.IsNullOrWhiteSpace(hex))
+        var directionX = arrow.End.X - arrow.Start.X;
+        var directionY = arrow.End.Y - arrow.Start.Y;
+        var length = Math.Sqrt(directionX * directionX + directionY * directionY);
+
+        if (length < 0.001)
         {
-            return fallback;
+            directionX = 1d;
+            directionY = 0d;
+            length = 1d;
         }
 
-        return ColorConverter.ConvertFromString(hex) is Color color
-            ? new SolidColorBrush(color)
-            : fallback;
+        directionX /= length;
+        directionY /= length;
+
+        var arrowLength = Math.Clamp(thickness * 5d, 10d, 26d);
+        var arrowHalfWidth = arrowLength * 0.45d;
+
+        var baseX = arrow.End.X - directionX * arrowLength;
+        var baseY = arrow.End.Y - directionY * arrowLength;
+
+        var perpX = -directionY;
+        var perpY = directionX;
+
+        var left = new Point(baseX + perpX * arrowHalfWidth, baseY + perpY * arrowHalfWidth);
+        var right = new Point(baseX - perpX * arrowHalfWidth, baseY - perpY * arrowHalfWidth);
+
+        var head = new Polygon
+        {
+            Fill = stroke,
+            Stroke = stroke,
+            StrokeThickness = Math.Max(1d, thickness / 2d),
+            Points = new PointCollection
+            {
+                new(arrow.End.X, arrow.End.Y),
+                left,
+                right
+            }
+        };
+
+        container.Children.Add(line);
+        container.Children.Add(head);
+        return container;
+    }
+
+    private static UIElement BuildInkVisual(InkAnnotation ink, Brush stroke, double thickness)
+    {
+        if (ink.Points.Count == 1)
+        {
+            var point = ink.Points[0];
+            var dotDiameter = Math.Max(thickness, 2d);
+            var ellipse = new Ellipse
+            {
+                Width = dotDiameter,
+                Height = dotDiameter,
+                Fill = stroke,
+                Stroke = stroke,
+                StrokeThickness = 1
+            };
+
+            Canvas.SetLeft(ellipse, point.X - dotDiameter / 2d);
+            Canvas.SetTop(ellipse, point.Y - dotDiameter / 2d);
+            return ellipse;
+        }
+
+        return new Polyline
+        {
+            Stroke = stroke,
+            StrokeThickness = thickness,
+            StrokeLineJoin = PenLineJoin.Round,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            Points = new PointCollection(ink.Points.Select(point => new Point(point.X, point.Y)))
+        };
+    }
+
+    private static UIElement BuildTextVisual(TextAnnotation text, Color strokeColor, double thickness, bool isSelected)
+    {
+        var border = new Border
+        {
+            Width = Math.Max(60d, text.Bounds.Width),
+            Height = Math.Max(text.FontSize + 14d, text.Bounds.Height),
+            Background = new SolidColorBrush(Color.FromArgb(96, 0, 0, 0)),
+            BorderBrush = isSelected
+                ? Brushes.DodgerBlue
+                : new SolidColorBrush(Color.FromArgb(180, strokeColor.R, strokeColor.G, strokeColor.B)),
+            BorderThickness = new Thickness(Math.Max(1d, thickness / 2d)),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6)
+        };
+
+        border.Child = new TextBlock
+        {
+            Text = text.Text,
+            Foreground = new SolidColorBrush(strokeColor),
+            FontSize = text.FontSize,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Top
+        };
+
+        Canvas.SetLeft(border, text.Bounds.X);
+        Canvas.SetTop(border, text.Bounds.Y);
+        return border;
+    }
+
+    private static UIElement BuildHighlighterVisual(HighlighterAnnotation highlighter, Color strokeColor, double thickness, bool isSelected)
+    {
+        var fillAlpha = (byte)Math.Round(Math.Clamp(highlighter.FillOpacity, 0d, 1d) * 255d);
+        var fill = new SolidColorBrush(Color.FromArgb(fillAlpha, strokeColor.R, strokeColor.G, strokeColor.B));
+
+        var borderAlpha = isSelected ? (byte)255 : (byte)200;
+        var stroke = new SolidColorBrush(Color.FromArgb(borderAlpha, strokeColor.R, strokeColor.G, strokeColor.B));
+
+        var shape = new Rectangle
+        {
+            Width = highlighter.Bounds.Width,
+            Height = highlighter.Bounds.Height,
+            Fill = fill,
+            Stroke = stroke,
+            StrokeThickness = Math.Max(1d, thickness / 2d),
+            RadiusX = 2,
+            RadiusY = 2
+        };
+
+        Canvas.SetLeft(shape, highlighter.Bounds.X);
+        Canvas.SetTop(shape, highlighter.Bounds.Y);
+        return shape;
     }
 
     private BitmapSource? RenderDocumentBitmap(bool includeSelectionHandles)
@@ -501,6 +764,33 @@ public partial class MainWindow : Window
         return false;
     }
 
+    private void SyncControlsFromSelection()
+    {
+        _suppressStyleEvents = true;
+        _suppressTextEvents = true;
+
+        try
+        {
+            if (_document.SelectedAnnotationId is Guid selectedId
+                && _document.TryGetAnnotation(selectedId, out var annotation))
+            {
+                SelectComboBoxItemByTag(ColorComboBox, GetStrokeHex(annotation));
+                SelectNearestNumericComboBoxItem(StrokeThicknessComboBox, GetStrokeThickness(annotation));
+
+                if (annotation is TextAnnotation textAnnotation)
+                {
+                    TextContentTextBox.Text = textAnnotation.Text;
+                    SelectNearestNumericComboBoxItem(FontSizeComboBox, textAnnotation.FontSize);
+                }
+            }
+        }
+        finally
+        {
+            _suppressStyleEvents = false;
+            _suppressTextEvents = false;
+        }
+    }
+
     private AnnotationRect BuildSeedBounds()
     {
         var width = Math.Max(120d, EditorCanvas.Width * 0.25d);
@@ -508,6 +798,117 @@ public partial class MainWindow : Window
         var x = Math.Max(0d, (EditorCanvas.Width - width) / 2d);
         var y = Math.Max(0d, (EditorCanvas.Height - height) / 2d);
         return new AnnotationRect(x, y, width, height);
+    }
+
+    private IReadOnlyList<AnnotationPoint> BuildSeedInkPoints()
+    {
+        var seed = BuildSeedBounds();
+
+        return
+        [
+            new AnnotationPoint(seed.Left, seed.Bottom - seed.Height * 0.2d),
+            new AnnotationPoint(seed.Left + seed.Width * 0.2d, seed.Top + seed.Height * 0.15d),
+            new AnnotationPoint(seed.Left + seed.Width * 0.45d, seed.Bottom - seed.Height * 0.1d),
+            new AnnotationPoint(seed.Left + seed.Width * 0.7d, seed.Top + seed.Height * 0.2d),
+            new AnnotationPoint(seed.Right, seed.Center.Y)
+        ];
+    }
+
+    private string BuildDefaultSaveName()
+    {
+        if (string.IsNullOrWhiteSpace(_document.SourcePath))
+        {
+            return "markup-shot-output.png";
+        }
+
+        var baseName = Path.GetFileNameWithoutExtension(_document.SourcePath);
+        return $"{baseName}-annotated.png";
+    }
+
+    private string GetSelectedStrokeHex() =>
+        GetSelectedTagValue(ColorComboBox) ?? DefaultStrokeHex;
+
+    private double GetSelectedStrokeThickness() =>
+        ParseTagDouble(StrokeThicknessComboBox, DefaultStrokeThickness);
+
+    private double GetSelectedFontSize() =>
+        ParseTagDouble(FontSizeComboBox, DefaultTextFontSize);
+
+    private static string GetStrokeHex(IAnnotation annotation) => annotation switch
+    {
+        RectangularAnnotationBase rectangular => rectangular.StrokeHex,
+        LineAnnotation line => line.StrokeHex,
+        ArrowAnnotation arrow => arrow.StrokeHex,
+        InkAnnotation ink => ink.StrokeHex,
+        _ => DefaultStrokeHex
+    };
+
+    private static double GetStrokeThickness(IAnnotation annotation) => annotation switch
+    {
+        RectangularAnnotationBase rectangular => rectangular.StrokeThickness,
+        LineAnnotation line => line.StrokeThickness,
+        ArrowAnnotation arrow => arrow.StrokeThickness,
+        InkAnnotation ink => ink.StrokeThickness,
+        _ => DefaultStrokeThickness
+    };
+
+    private static string? GetSelectedTagValue(ComboBox comboBox) =>
+        (comboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+
+    private static double ParseTagDouble(ComboBox comboBox, double fallback)
+    {
+        var tag = GetSelectedTagValue(comboBox);
+        return double.TryParse(tag, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
+    }
+
+    private static Color ParseColor(string hex, Color fallback)
+    {
+        if (ColorConverter.ConvertFromString(hex) is Color color)
+        {
+            return color;
+        }
+
+        return fallback;
+    }
+
+    private static void SelectComboBoxItemByTag(ComboBox comboBox, string tag)
+    {
+        foreach (var item in comboBox.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private static void SelectNearestNumericComboBoxItem(ComboBox comboBox, double value)
+    {
+        ComboBoxItem? bestItem = null;
+        var bestDistance = double.MaxValue;
+
+        foreach (var item in comboBox.Items.OfType<ComboBoxItem>())
+        {
+            if (!double.TryParse(item.Tag?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var itemValue))
+            {
+                continue;
+            }
+
+            var distance = Math.Abs(itemValue - value);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestItem = item;
+            }
+        }
+
+        if (bestItem is not null)
+        {
+            comboBox.SelectedItem = bestItem;
+        }
     }
 
     private static AnnotationPoint ToAnnotationPoint(Point point) =>
@@ -522,6 +923,13 @@ public partial class MainWindow : Window
             yield break;
         }
 
+        if (annotation is ArrowAnnotation arrow)
+        {
+            yield return arrow.Start;
+            yield return arrow.End;
+            yield break;
+        }
+
         var bounds = annotation.Bounds;
         var center = bounds.Center;
         yield return new AnnotationPoint(bounds.Left, bounds.Top);
@@ -532,17 +940,6 @@ public partial class MainWindow : Window
         yield return new AnnotationPoint(center.X, bounds.Bottom);
         yield return new AnnotationPoint(bounds.Left, bounds.Bottom);
         yield return new AnnotationPoint(bounds.Left, center.Y);
-    }
-
-    private string BuildDefaultSaveName()
-    {
-        if (string.IsNullOrWhiteSpace(_document.SourcePath))
-        {
-            return "markup-shot-output.png";
-        }
-
-        var baseName = Path.GetFileNameWithoutExtension(_document.SourcePath);
-        return $"{baseName}-annotated.png";
     }
 
     private enum CanvasInteractionMode

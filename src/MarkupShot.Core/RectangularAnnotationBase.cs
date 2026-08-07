@@ -48,6 +48,12 @@ public abstract class RectangularAnnotationBase : IAnnotation
         _bounds = AnnotationMath.ResizeRect(_bounds, handle, dx, dy, minimumSize);
     }
 
+    public virtual void SetStroke(string strokeHex, double strokeThickness)
+    {
+        StrokeHex = string.IsNullOrWhiteSpace(strokeHex) ? "#FFFF4F4F" : strokeHex;
+        StrokeThickness = strokeThickness <= 0 ? 1d : strokeThickness;
+    }
+
     protected IEnumerable<(AnnotationHandle Handle, AnnotationPoint Point)> GetHandlePoints()
     {
         var rect = _bounds;
