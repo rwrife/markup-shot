@@ -64,6 +64,23 @@ public static class AnnotationFactory
                     snapshot.StrokeThickness,
                     snapshot.FillOpacity),
 
+            AnnotationKind.Redaction =>
+                new RedactionAnnotation(
+                    snapshot.Id,
+                    new AnnotationRect(snapshot.X, snapshot.Y, snapshot.Width, snapshot.Height),
+                    snapshot.RedactionMode,
+                    snapshot.StrokeHex,
+                    snapshot.StrokeThickness),
+
+            AnnotationKind.StepBadge =>
+                new StepBadgeAnnotation(
+                    snapshot.Id,
+                    new AnnotationRect(snapshot.X, snapshot.Y, snapshot.Width, snapshot.Height),
+                    snapshot.StepNumber,
+                    snapshot.StrokeHex,
+                    snapshot.FillHex,
+                    snapshot.StrokeThickness),
+
             _ => throw new InvalidOperationException($"Unsupported annotation kind: {snapshot.Kind}")
         };
     }

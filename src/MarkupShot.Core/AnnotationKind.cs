@@ -8,5 +8,7 @@ public enum AnnotationKind
     Arrow = 3,
     Ink = 4,
     Text = 5,
-    Highlighter = 6
+    Highlighter = 6,
+    Redaction = 7,
+    StepBadge = 8
 }

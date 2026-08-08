@@ -42,6 +42,8 @@
                 <Button Content="Ink" Click="AddInkButton_Click" />
                 <Button Content="Text" Click="AddTextButton_Click" />
                 <Button Content="Highlighter" Click="AddHighlighterButton_Click" />
+                <Button Content="Redact" Click="AddRedactionButton_Click" />
+                <Button Content="Step Badge" Click="AddStepBadgeButton_Click" />
 
                 <Separator />
 
@@ -68,6 +70,24 @@
                     <ComboBoxItem Content="4 px" Tag="4" />
                     <ComboBoxItem Content="6 px" Tag="6" />
                     <ComboBoxItem Content="8 px" Tag="8" />
+                </ComboBox>
+
+                <TextBlock Text="Redaction" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <ComboBox x:Name="RedactionModeComboBox"
+                          Width="90"
+                          SelectionChanged="RedactionModeComboBox_SelectionChanged">
+                    <ComboBoxItem Content="Blur" Tag="Blur" IsSelected="True" />
+                    <ComboBoxItem Content="Pixelate" Tag="Pixelate" />
+                </ComboBox>
+
+                <TextBlock Text="Badge Size" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <ComboBox x:Name="BadgeSizeComboBox"
+                          Width="82"
+                          SelectionChanged="BadgeSizeComboBox_SelectionChanged">
+                    <ComboBoxItem Content="28 px" Tag="28" />
+                    <ComboBoxItem Content="36 px" Tag="36" IsSelected="True" />
+                    <ComboBoxItem Content="44 px" Tag="44" />
+                    <ComboBoxItem Content="56 px" Tag="56" />
                 </ComboBox>
 
                 <TextBlock Text="Font" VerticalAlignment="Center" Margin="8,0,4,0" />

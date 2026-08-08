@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private const double DefaultStrokeThickness = 2d;
     private const double DefaultTextFontSize = 18d;
     private const string DefaultTextCallout = "Add note here";
+    private const string DefaultBadgeFillHex = "#FFE53935";
+    private const double DefaultBadgeDiameter = 36d;
 
     private const int HotkeyId = 0x4D53;
     private const uint ModControl = 0x0002;
@@ -186,6 +188,46 @@ public partial class MainWindow : Window
         AddAndSelectAnnotation(annotation, "Added highlighter annotation.");
     }
 
+    private void AddRedactionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var annotation = new RedactionAnnotation(
+            BuildSeedBounds(),
+            GetSelectedRedactionMode(),
+            strokeHex: GetSelectedStrokeHex(),
+            strokeThickness: Math.Max(1d, GetSelectedStrokeThickness() / 2d));
+
+        AddAndSelectAnnotation(annotation, $"Added {annotation.Mode.ToString().ToLowerInvariant()} redaction region.");
+    }
+
+    private void AddStepBadgeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureImageLoaded())
+        {
+            return;
+        }
+
+        var badgeBounds = BuildSeedBadgeBounds();
+        var fillHex = GetSelectedStrokeHex();
+        if (string.IsNullOrWhiteSpace(fillHex))
+        {
+            fillHex = DefaultBadgeFillHex;
+        }
+
+        var annotation = new StepBadgeAnnotation(
+            badgeBounds,
+            _document.NextStepBadgeNumber,
+            strokeHex: "#FFFFFFFF",
+            fillHex: fillHex,
+            strokeThickness: 2d);
+
+        AddAndSelectAnnotation(annotation, $"Added step badge #{annotation.StepNumber}.");
+    }
+
     private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e) => DeleteSelectedAnnotation();
 
     private void StyleControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -202,6 +244,12 @@ public partial class MainWindow : Window
         }
 
         selectedAnnotation.SetStroke(GetSelectedStrokeHex(), GetSelectedStrokeThickness());
+
+        if (selectedAnnotation is StepBadgeAnnotation stepBadge)
+        {
+            stepBadge.SetFill(GetSelectedStrokeHex());
+        }
+
         RenderDocument();
     }
 
@@ -220,6 +268,42 @@ public partial class MainWindow : Window
         }
 
         textAnnotation.SetFontSize(GetSelectedFontSize());
+        RenderDocument();
+    }
+
+    private void RedactionModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (_document.SelectedAnnotationId is not Guid selectedId
+            || !_document.TryGetAnnotation(selectedId, out var selectedAnnotation)
+            || selectedAnnotation is not RedactionAnnotation redaction)
+        {
+            return;
+        }
+
+        redaction.SetMode(GetSelectedRedactionMode());
+        RenderDocument();
+    }
+
+    private void BadgeSizeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (_document.SelectedAnnotationId is not Guid selectedId
+            || !_document.TryGetAnnotation(selectedId, out var selectedAnnotation)
+            || selectedAnnotation is not StepBadgeAnnotation stepBadge)
+        {
+            return;
+        }
+
+        stepBadge.SetDiameter(GetSelectedBadgeDiameter());
         RenderDocument();
     }
 
@@ -786,6 +870,8 @@ public partial class MainWindow : Window
             InkAnnotation ink => BuildInkVisual(ink, strokeBrush, thickness),
             TextAnnotation text => BuildTextVisual(text, color, thickness, isSelected),
             HighlighterAnnotation highlighter => BuildHighlighterVisual(highlighter, color, thickness, isSelected),
+            RedactionAnnotation redaction => BuildRedactionVisual(redaction, color, thickness, isSelected),
+            StepBadgeAnnotation stepBadge => BuildStepBadgeVisual(stepBadge, color, thickness, isSelected),
             _ => throw new InvalidOperationException($"Unknown annotation type: {annotation.GetType().Name}")
         };
     }
@@ -979,6 +1065,128 @@ public partial class MainWindow : Window
         return shape;
     }
 
+    private UIElement BuildRedactionVisual(RedactionAnnotation redaction, Color accentColor, double thickness, bool isSelected)
+    {
+        var container = new Grid
+        {
+            Width = redaction.Bounds.Width,
+            Height = redaction.Bounds.Height,
+            IsHitTestVisible = false
+        };
+
+        var redactedSource = BuildRedactionBitmapSource(redaction);
+        if (redactedSource is not null)
+        {
+            container.Children.Add(new Image
+            {
+                Source = redactedSource,
+                Width = redaction.Bounds.Width,
+                Height = redaction.Bounds.Height,
+                Stretch = Stretch.Fill
+            });
+        }
+
+        var border = new Border
+        {
+            Width = redaction.Bounds.Width,
+            Height = redaction.Bounds.Height,
+            BorderBrush = new SolidColorBrush(Color.FromArgb(
+                isSelected ? (byte)255 : (byte)190,
+                accentColor.R,
+                accentColor.G,
+                accentColor.B)),
+            BorderThickness = new Thickness(Math.Max(1d, thickness / 2d)),
+            Background = redactedSource is null
+                ? new SolidColorBrush(Color.FromArgb(80, accentColor.R, accentColor.G, accentColor.B))
+                : Brushes.Transparent
+        };
+
+        container.Children.Add(border);
+
+        Canvas.SetLeft(container, redaction.Bounds.X);
+        Canvas.SetTop(container, redaction.Bounds.Y);
+        return container;
+    }
+
+    private static UIElement BuildStepBadgeVisual(StepBadgeAnnotation stepBadge, Color strokeColor, double thickness, bool isSelected)
+    {
+        var fillColor = ParseColor(stepBadge.FillHex, strokeColor);
+        var diameter = stepBadge.Diameter;
+
+        var container = new Grid
+        {
+            Width = diameter,
+            Height = diameter,
+            IsHitTestVisible = false
+        };
+
+        container.Children.Add(new Ellipse
+        {
+            Width = diameter,
+            Height = diameter,
+            Fill = new SolidColorBrush(fillColor),
+            Stroke = isSelected ? Brushes.DodgerBlue : new SolidColorBrush(strokeColor),
+            StrokeThickness = isSelected ? Math.Max(2d, thickness) : Math.Max(1d, thickness / 2d)
+        });
+
+        container.Children.Add(new TextBlock
+        {
+            Text = stepBadge.StepNumber.ToString(CultureInfo.InvariantCulture),
+            Foreground = Brushes.White,
+            FontWeight = FontWeights.Bold,
+            FontSize = Math.Max(12d, diameter * 0.42d),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        });
+
+        Canvas.SetLeft(container, stepBadge.Bounds.X);
+        Canvas.SetTop(container, stepBadge.Bounds.Y);
+        return container;
+    }
+
+    private BitmapSource? BuildRedactionBitmapSource(RedactionAnnotation redaction)
+    {
+        if (_currentBitmap is null)
+        {
+            return null;
+        }
+
+        var normalized = redaction.Bounds.Normalize();
+        var x = Math.Max(0, (int)Math.Floor(normalized.X));
+        var y = Math.Max(0, (int)Math.Floor(normalized.Y));
+        var right = Math.Min(_currentBitmap.PixelWidth, (int)Math.Ceiling(normalized.Right));
+        var bottom = Math.Min(_currentBitmap.PixelHeight, (int)Math.Ceiling(normalized.Bottom));
+
+        var width = right - x;
+        var height = bottom - y;
+        if (width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        var converted = _currentBitmap.Format == PixelFormats.Bgra32
+            ? _currentBitmap
+            : new FormatConvertedBitmap(_currentBitmap, PixelFormats.Bgra32, null, 0);
+
+        var stride = width * 4;
+        var pixels = new byte[stride * height];
+        converted.CopyPixels(new Int32Rect(x, y, width, height), pixels, stride, 0);
+
+        ImageRedactionFilter.ApplyInPlace(
+            pixels,
+            width,
+            height,
+            stride,
+            new AnnotationRect(0, 0, width, height),
+            redaction.Mode);
+
+        var output = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+        output.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
+        output.Freeze();
+        return output;
+    }
+
     private BitmapSource? RenderDocumentBitmap(bool includeSelectionHandles)
     {
         if (!_document.HasImage)
@@ -1029,6 +1237,17 @@ public partial class MainWindow : Window
                     TextContentTextBox.Text = textAnnotation.Text;
                     SelectNearestNumericComboBoxItem(FontSizeComboBox, textAnnotation.FontSize);
                 }
+
+                if (annotation is RedactionAnnotation redaction)
+                {
+                    SelectComboBoxItemByTag(RedactionModeComboBox, redaction.Mode.ToString());
+                }
+
+                if (annotation is StepBadgeAnnotation stepBadge)
+                {
+                    SelectComboBoxItemByTag(ColorComboBox, stepBadge.FillHex);
+                    SelectNearestNumericComboBoxItem(BadgeSizeComboBox, stepBadge.Diameter);
+                }
             }
         }
         finally
@@ -1045,6 +1264,14 @@ public partial class MainWindow : Window
         var x = Math.Max(0d, (EditorCanvas.Width - width) / 2d);
         var y = Math.Max(0d, (EditorCanvas.Height - height) / 2d);
         return new AnnotationRect(x, y, width, height);
+    }
+
+    private AnnotationRect BuildSeedBadgeBounds()
+    {
+        var size = GetSelectedBadgeDiameter();
+        var x = Math.Max(0d, (EditorCanvas.Width - size) / 2d);
+        var y = Math.Max(0d, (EditorCanvas.Height - size) / 2d);
+        return new AnnotationRect(x, y, size, size);
     }
 
     private IReadOnlyList<AnnotationPoint> BuildSeedInkPoints()
@@ -1080,6 +1307,17 @@ public partial class MainWindow : Window
 
     private double GetSelectedFontSize() =>
         ParseTagDouble(FontSizeComboBox, DefaultTextFontSize);
+
+    private RedactionMode GetSelectedRedactionMode()
+    {
+        var tag = GetSelectedTagValue(RedactionModeComboBox);
+        return Enum.TryParse<RedactionMode>(tag, ignoreCase: true, out var mode)
+            ? mode
+            : RedactionMode.Blur;
+    }
+
+    private double GetSelectedBadgeDiameter() =>
+        ParseTagDouble(BadgeSizeComboBox, DefaultBadgeDiameter);
 
     private static string GetStrokeHex(IAnnotation annotation) => annotation switch
     {
