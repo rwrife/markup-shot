@@ -45,10 +45,13 @@ public sealed class MarkupDocument
         BaseImage.Save(path);
     }
 
+    public int NextStepBadgeNumber => _annotations.OfType<StepBadgeAnnotation>().Count() + 1;
+
     public void AddAnnotation(IAnnotation annotation)
     {
         ArgumentNullException.ThrowIfNull(annotation);
         _annotations.Add(annotation);
+        ResequenceStepBadges();
     }
 
     public bool RemoveAnnotation(Guid id)
@@ -65,6 +68,7 @@ public sealed class MarkupDocument
             SelectedAnnotationId = null;
         }
 
+        ResequenceStepBadges();
         return true;
     }
 
@@ -172,6 +176,16 @@ public sealed class MarkupDocument
         }
 
         return document;
+    }
+
+    private void ResequenceStepBadges()
+    {
+        var step = 1;
+        foreach (var badge in _annotations.OfType<StepBadgeAnnotation>())
+        {
+            badge.SetStepNumber(step);
+            step++;
+        }
     }
 
     private int FindIndexById(Guid id)

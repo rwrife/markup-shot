@@ -29,4 +29,10 @@ public sealed record AnnotationSnapshot
     public double FillOpacity { get; init; } = 0.35d;
 
     public List<AnnotationPoint>? Points { get; init; }
+
+    public RedactionMode RedactionMode { get; init; } = RedactionMode.Blur;
+
+    public int StepNumber { get; init; } = 1;
+
+    public string FillHex { get; init; } = "#FFE53935";
 }

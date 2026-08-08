@@ -12,6 +12,8 @@ public sealed class AnnotationModelTests
         var line = new LineAnnotation(new AnnotationPoint(200, 10), new AnnotationPoint(260, 40));
         var arrow = new ArrowAnnotation(new AnnotationPoint(20, 90), new AnnotationPoint(90, 90));
         var highlighter = new HighlighterAnnotation(new AnnotationRect(120, 90, 90, 24));
+        var redaction = new RedactionAnnotation(new AnnotationRect(230, 70, 80, 60), RedactionMode.Pixelate);
+        var stepBadge = new StepBadgeAnnotation(new AnnotationRect(320, 60, 32, 32), stepNumber: 1);
 
         Assert.True(rectangle.HitTest(new AnnotationPoint(20, 20)));
         Assert.False(rectangle.HitTest(new AnnotationPoint(1, 1), tolerance: 0));
@@ -27,6 +29,12 @@ public sealed class AnnotationModelTests
 
         Assert.True(highlighter.HitTest(new AnnotationPoint(140, 95)));
         Assert.False(highlighter.HitTest(new AnnotationPoint(90, 50), tolerance: 0));
+
+        Assert.True(redaction.HitTest(new AnnotationPoint(260, 90)));
+        Assert.False(redaction.HitTest(new AnnotationPoint(40, 250), tolerance: 0));
+
+        Assert.True(stepBadge.HitTest(stepBadge.Bounds.Center));
+        Assert.False(stepBadge.HitTest(new AnnotationPoint(380, 140), tolerance: 1));
     }
 
     [Fact]
@@ -51,6 +59,29 @@ public sealed class AnnotationModelTests
         Assert.True(document.RemoveAnnotation(rectangle.Id));
         Assert.Empty(document.Annotations);
         Assert.Null(document.SelectedAnnotationId);
+    }
+
+    [Fact]
+    public void StepBadges_ResequenceWhenDeleted()
+    {
+        var document = new MarkupDocument();
+        var first = new StepBadgeAnnotation(new AnnotationRect(10, 10, 30, 30), stepNumber: 10);
+        var second = new StepBadgeAnnotation(new AnnotationRect(50, 10, 30, 30), stepNumber: 20);
+        var third = new StepBadgeAnnotation(new AnnotationRect(90, 10, 30, 30), stepNumber: 30);
+
+        document.AddAnnotation(first);
+        document.AddAnnotation(second);
+        document.AddAnnotation(third);
+
+        Assert.Equal(1, first.StepNumber);
+        Assert.Equal(2, second.StepNumber);
+        Assert.Equal(3, third.StepNumber);
+
+        Assert.True(document.RemoveAnnotation(second.Id));
+
+        Assert.Equal(1, first.StepNumber);
+        Assert.Equal(2, third.StepNumber);
+        Assert.Equal(3, document.NextStepBadgeNumber);
     }
 
     [Fact]
@@ -140,6 +171,8 @@ public sealed class AnnotationModelTests
         ], "#FF00AAAA", 3d);
         var text = new TextAnnotation(Guid.NewGuid(), new AnnotationRect(120, 80, 160, 70), "Line 1\nLine 2", 20d, "#FFFFFFFF", 1d);
         var highlighter = new HighlighterAnnotation(Guid.NewGuid(), new AnnotationRect(20, 120, 200, 30), "#FFFFFF00", 1d, 0.4d);
+        var redaction = new RedactionAnnotation(Guid.NewGuid(), new AnnotationRect(260, 30, 80, 50), RedactionMode.Pixelate, "#FF00BCD4", 2d);
+        var stepBadge = new StepBadgeAnnotation(Guid.NewGuid(), new AnnotationRect(360, 40, 36, 36), stepNumber: 3, strokeHex: "#FFFFFFFF", fillHex: "#FF3F51B5", strokeThickness: 2d);
 
         document.AddAnnotation(rect);
         document.AddAnnotation(ellipse);
@@ -148,11 +181,13 @@ public sealed class AnnotationModelTests
         document.AddAnnotation(ink);
         document.AddAnnotation(text);
         document.AddAnnotation(highlighter);
+        document.AddAnnotation(redaction);
+        document.AddAnnotation(stepBadge);
 
         var json = document.SerializeProject();
         var restored = MarkupDocument.DeserializeProject(json);
 
-        Assert.Equal(7, restored.Annotations.Count);
+        Assert.Equal(9, restored.Annotations.Count);
         Assert.Equal(AnnotationKind.Rectangle, restored.Annotations[0].Kind);
         Assert.Equal(AnnotationKind.Ellipse, restored.Annotations[1].Kind);
         Assert.Equal(AnnotationKind.Line, restored.Annotations[2].Kind);
@@ -160,6 +195,8 @@ public sealed class AnnotationModelTests
         Assert.Equal(AnnotationKind.Ink, restored.Annotations[4].Kind);
         Assert.Equal(AnnotationKind.Text, restored.Annotations[5].Kind);
         Assert.Equal(AnnotationKind.Highlighter, restored.Annotations[6].Kind);
+        Assert.Equal(AnnotationKind.Redaction, restored.Annotations[7].Kind);
+        Assert.Equal(AnnotationKind.StepBadge, restored.Annotations[8].Kind);
 
         var restoredRect = Assert.IsType<RectangleAnnotation>(restored.Annotations[0]);
         var restoredEllipse = Assert.IsType<EllipseAnnotation>(restored.Annotations[1]);
@@ -168,6 +205,8 @@ public sealed class AnnotationModelTests
         var restoredInk = Assert.IsType<InkAnnotation>(restored.Annotations[4]);
         var restoredText = Assert.IsType<TextAnnotation>(restored.Annotations[5]);
         var restoredHighlighter = Assert.IsType<HighlighterAnnotation>(restored.Annotations[6]);
+        var restoredRedaction = Assert.IsType<RedactionAnnotation>(restored.Annotations[7]);
+        var restoredStepBadge = Assert.IsType<StepBadgeAnnotation>(restored.Annotations[8]);
 
         Assert.Equal(rect.Bounds, restoredRect.Bounds);
         Assert.Equal(ellipse.Bounds, restoredEllipse.Bounds);
@@ -179,5 +218,8 @@ public sealed class AnnotationModelTests
         Assert.Equal(text.Text, restoredText.Text);
         Assert.Equal(text.FontSize, restoredText.FontSize);
         Assert.Equal(highlighter.FillOpacity, restoredHighlighter.FillOpacity, precision: 3);
+        Assert.Equal(redaction.Mode, restoredRedaction.Mode);
+        Assert.Equal(stepBadge.StepNumber, restoredStepBadge.StepNumber);
+        Assert.Equal(stepBadge.FillHex, restoredStepBadge.FillHex);
     }
 }
