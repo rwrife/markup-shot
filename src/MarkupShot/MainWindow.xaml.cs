@@ -1,14 +1,22 @@
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using MarkupShot.Core;
 using Microsoft.Win32;
+using DrawingBitmap = System.Drawing.Bitmap;
+using DrawingPoint = System.Drawing.Point;
+using DrawingRectangle = System.Drawing.Rectangle;
+using DrawingSystemIcons = System.Drawing.SystemIcons;
+using Forms = System.Windows.Forms;
 
 namespace MarkupShot;
 
@@ -19,8 +27,17 @@ public partial class MainWindow : Window
     private const double DefaultTextFontSize = 18d;
     private const string DefaultTextCallout = "Add note here";
 
+    private const int HotkeyId = 0x4D53;
+    private const uint ModControl = 0x0002;
+    private const uint ModShift = 0x0004;
+    private const uint VkM = 0x4D;
+    private const int WmHotkey = 0x0312;
+
     private readonly MarkupDocument _document = new();
+    private readonly Forms.NotifyIcon _trayIcon;
+
     private BitmapSource? _currentBitmap;
+    private HwndSource? _windowSource;
 
     private CanvasInteractionMode _interactionMode = CanvasInteractionMode.None;
     private AnnotationHandle _activeHandle = AnnotationHandle.None;
@@ -28,20 +45,30 @@ public partial class MainWindow : Window
 
     private bool _suppressStyleEvents;
     private bool _suppressTextEvents;
+    private bool _isExiting;
+    private bool _captureInProgress;
 
     public MainWindow()
     {
         InitializeComponent();
         TextContentTextBox.Text = DefaultTextCallout;
+
+        _trayIcon = InitializeTrayIcon();
+
+        SourceInitialized += MainWindow_SourceInitialized;
+        StateChanged += MainWindow_StateChanged;
+        IsVisibleChanged += MainWindow_IsVisibleChanged;
     }
 
     private void OpenMenuItem_Click(object sender, RoutedEventArgs e) => OpenWithDialog();
+
+    private void CaptureMenuItem_Click(object sender, RoutedEventArgs e) => BeginRegionCapture();
 
     private void SaveAsMenuItem_Click(object sender, RoutedEventArgs e) => SaveWithDialog();
 
     private void CopyMenuItem_Click(object sender, RoutedEventArgs e) => CopyToClipboard();
 
-    private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => Close();
+    private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => RequestExit();
 
     private void AddArrowButton_Click(object sender, RoutedEventArgs e)
     {
@@ -243,6 +270,11 @@ public partial class MainWindow : Window
             CopyToClipboard();
             e.Handled = true;
         }
+        else if (e.Key == Key.M && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+        {
+            BeginRegionCapture();
+            e.Handled = true;
+        }
     }
 
     private void Window_DragOver(object sender, DragEventArgs e)
@@ -352,6 +384,199 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private Forms.NotifyIcon InitializeTrayIcon()
+    {
+        var contextMenu = new Forms.ContextMenuStrip();
+        contextMenu.Items.Add("Capture", image: null, onClick: (_, _) => BeginRegionCapture());
+        contextMenu.Items.Add("Open", image: null, onClick: (_, _) => ShowFromTray());
+        contextMenu.Items.Add("Settings", image: null, onClick: (_, _) =>
+            MessageBox.Show(this,
+                "Settings persistence is planned in a follow-up milestone.\nCurrent capture hotkey: Ctrl+Shift+M.",
+                "markup-shot",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information));
+        contextMenu.Items.Add(new Forms.ToolStripSeparator());
+        contextMenu.Items.Add("Exit", image: null, onClick: (_, _) => RequestExit());
+
+        var trayIcon = new Forms.NotifyIcon
+        {
+            Text = "markup-shot",
+            Icon = DrawingSystemIcons.Application,
+            ContextMenuStrip = contextMenu,
+            Visible = true
+        };
+
+        trayIcon.DoubleClick += (_, _) => ShowFromTray();
+        return trayIcon;
+    }
+
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        _windowSource = HwndSource.FromHwnd(handle);
+        _windowSource?.AddHook(WndProc);
+
+        if (!RegisterHotKey(handle, HotkeyId, ModControl | ModShift, VkM))
+        {
+            var errorCode = Marshal.GetLastWin32Error();
+            StatusTextBlock.Text = $"Global hotkey unavailable (Win32 {errorCode}).";
+        }
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            HideToTray();
+        }
+    }
+
+    private void MainWindow_IsVisibleChanged(object? sender, DependencyPropertyChangedEventArgs e)
+    {
+        var visible = IsVisible;
+        ShowInTaskbar = visible;
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_isExiting)
+        {
+            e.Cancel = true;
+            HideToTray();
+            StatusTextBlock.Text = "markup-shot is still running in the system tray.";
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        UnregisterHotKey(handle, HotkeyId);
+
+        if (_windowSource is not null)
+        {
+            _windowSource.RemoveHook(WndProc);
+            _windowSource = null;
+        }
+
+        _trayIcon.Visible = false;
+        _trayIcon.Dispose();
+        base.OnClosed(e);
+    }
+
+    private nint WndProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
+    {
+        if (msg == WmHotkey && wParam.ToInt32() == HotkeyId)
+        {
+            BeginRegionCapture();
+            handled = true;
+        }
+
+        return 0;
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void ShowFromTray()
+    {
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        ShowInTaskbar = true;
+        Activate();
+    }
+
+    private void RequestExit()
+    {
+        _isExiting = true;
+        Close();
+    }
+
+    private void BeginRegionCapture()
+    {
+        if (_captureInProgress)
+        {
+            return;
+        }
+
+        _captureInProgress = true;
+
+        try
+        {
+            HideToTray();
+
+            var overlay = new CaptureOverlayWindow();
+            var accepted = overlay.ShowDialog() == true;
+
+            if (accepted && overlay.SelectedRegion is DrawingRectangle region)
+            {
+                var bitmap = CaptureScreenRegion(region);
+                LoadBitmapSource(bitmap, sourceDisplayName: $"Capture {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                StatusTextBlock.Text = $"Captured region {region.Width}x{region.Height}.";
+            }
+            else
+            {
+                StatusTextBlock.Text = "Capture cancelled.";
+            }
+
+            ShowFromTray();
+        }
+        catch (Exception ex)
+        {
+            ShowFromTray();
+            MessageBox.Show(this, ex.Message, "Capture failed", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _captureInProgress = false;
+        }
+    }
+
+    private static BitmapSource CaptureScreenRegion(DrawingRectangle region)
+    {
+        if (region.Width < 1 || region.Height < 1)
+        {
+            throw new InvalidOperationException("Capture region must be at least 1x1 pixels.");
+        }
+
+        using var bitmap = new DrawingBitmap(region.Width, region.Height, PixelFormat.Format32bppPArgb);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.CopyFromScreen(region.Location, DrawingPoint.Empty, region.Size, CopyPixelOperation.SourceCopy);
+        }
+
+        var hBitmap = bitmap.GetHbitmap();
+
+        try
+        {
+            var source = Imaging.CreateBitmapSourceFromHBitmap(
+                hBitmap,
+                IntPtr.Zero,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromEmptyOptions());
+
+            source.Freeze();
+            return source;
+        }
+        finally
+        {
+            DeleteObject(hBitmap);
+        }
+    }
+
     private void OpenWithDialog()
     {
         var dialog = new OpenFileDialog
@@ -432,33 +657,55 @@ public partial class MainWindow : Window
         try
         {
             var image = CanvasImage.Load(path);
-            _document.SetImage(image, path);
-
-            using var input = new MemoryStream(image.Bytes.ToArray(), writable: false);
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
-            bitmap.StreamSource = input;
-            bitmap.EndInit();
-            bitmap.Freeze();
-
-            _currentBitmap = bitmap;
-            BaseImageElement.Source = bitmap;
-            BaseImageElement.Width = image.Width;
-            BaseImageElement.Height = image.Height;
-            EditorCanvas.Width = image.Width;
-            EditorCanvas.Height = image.Height;
-
-            Title = $"markup-shot — {Path.GetFileName(path)}";
-            StatusTextBlock.Text = $"Loaded {Path.GetFileName(path)} ({image.Width}x{image.Height})";
-            SyncControlsFromSelection();
-            RenderDocument();
+            var bitmap = DecodeBitmap(image);
+            LoadCanvasImage(image, bitmap, sourceDisplayName: Path.GetFileName(path), sourcePath: path);
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "Could not open image", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void LoadBitmapSource(BitmapSource bitmap, string sourceDisplayName)
+    {
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+
+        var image = CanvasImage.FromBytes(stream.ToArray());
+        LoadCanvasImage(image, bitmap, sourceDisplayName, sourcePath: null);
+    }
+
+    private void LoadCanvasImage(CanvasImage image, BitmapSource bitmap, string sourceDisplayName, string? sourcePath)
+    {
+        _document.SetImage(image, sourcePath);
+
+        _currentBitmap = bitmap;
+        BaseImageElement.Source = bitmap;
+        BaseImageElement.Width = image.Width;
+        BaseImageElement.Height = image.Height;
+        EditorCanvas.Width = image.Width;
+        EditorCanvas.Height = image.Height;
+
+        Title = $"markup-shot — {sourceDisplayName}";
+        StatusTextBlock.Text = $"Loaded {sourceDisplayName} ({image.Width}x{image.Height})";
+        SyncControlsFromSelection();
+        RenderDocument();
+    }
+
+    private static BitmapSource DecodeBitmap(CanvasImage image)
+    {
+        using var input = new MemoryStream(image.Bytes.ToArray(), writable: false);
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+        bitmap.StreamSource = input;
+        bitmap.EndInit();
+        bitmap.Freeze();
+        return bitmap;
     }
 
     private void AddAndSelectAnnotation(IAnnotation annotation, string statusMessage)
@@ -941,6 +1188,15 @@ public partial class MainWindow : Window
         yield return new AnnotationPoint(bounds.Left, bounds.Bottom);
         yield return new AnnotationPoint(bounds.Left, center.Y);
     }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(nint hWnd, int id);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern bool DeleteObject(nint hObject);
 
     private enum CanvasInteractionMode
     {
